@@ -127,9 +127,38 @@ def execute_query(connection, cursor,query):
 
     return result
 
+
+st.session_state.status = st.session_state.get("status", "unverified")
+st.title("Login page")
+
+
+def check_password():
+    if hmac.compare_digest(st.session_state.password, st.secrets.password):
+        st.session_state.status = "verified"
+    else:
+        st.session_state.status = "incorrect"
+    st.session_state.password = ""
+
+def login_prompt():
+    st.text_input("Enter password:", key="password", on_change=check_password)
+    if st.session_state.status == "incorrect":
+        st.warning("Incorrect password. Please try again.")
+
+def logout():
+    st.session_state.status = "unverified"
+
+def welcome():
+    st.success("Login successful.")
+    st.button("Log out", on_click=logout)
+
+
+if st.session_state.status != "verified":
+    login_prompt()
+    st.stop()
+welcome()
+
 df = execute_query(query=query)
 
-st.dataframe(df,use_container_width=True)
 
 df['euid'] = df['euid'].fillna('Unknown')
 df['ad_account'] = df['ad_account'].fillna('Unknown')
@@ -204,12 +233,12 @@ st.title('AdSpend Paid Stats')
 st.write("Enter conversion rates for the following currencies:")
 
 # Create columns dynamically based on the number of currencies
-cols = st.columns(5)  # Adjust the number of columns (3 in this case)
+cols = st.columns(4)  # Adjust the number of columns (3 in this case)
 
 # Iterate over non-USD currencies and display them in columns
 for idx, currency in enumerate(non_usd_currencies):
     default_value = default_values.get(currency, 1.0)  # Use default value if defined, otherwise 1.0
-    with cols[idx % 5]:  # Rotate through the columns
+    with cols[idx % 4]:  # Rotate through the columns
         conversion_rates[currency] = st.number_input(
             f"{currency} to USD:", value=default_value, min_value=0.0, step=0.001, format="%.3f"
         )
@@ -251,6 +280,7 @@ grouped_df = df.groupby(['grouped_date']).agg({'total_amount_in_usd': 'sum', 'ad
 
 grouped_df.set_index('grouped_date', inplace=True)
 grouped_df_T = grouped_df.T
+
 # Sort the columns by date
 if grouping == 'Year':
     grouped_df_T = grouped_df_T[sorted(grouped_df_T.columns, key=lambda x: pd.to_datetime(x, format='%Y'), reverse=True)]
@@ -261,24 +291,31 @@ elif grouping == 'Week':
 else:  # Date
     grouped_df_T = grouped_df_T[sorted(grouped_df_T.columns, key=lambda x: pd.to_datetime(x), reverse=True)]
 
-st.dataframe(grouped_df_T,use_container_width=True)
+st.dataframe(grouped_df_T.sort_index(), use_container_width=True)
 
 #get usd to inr conversion rate
 st.write("Enter conversion rates for the USD TO INR:")
 
 conversion_rate = st.number_input("USD to INR conversion rate:", value=84.0, min_value=0.0, step=0.001, format="%.3f")
 
-grouped_df['total_amount_inr'] = grouped_df['total_amount_in_usd'] * conversion_rate
-grouped_df['adspend_amount_inr'] = grouped_df['adspend_amount_in_usd'] * conversion_rate
-grouped_df['convenience_fee_inr'] = grouped_df['convenience_fee_in_usd'] * conversion_rate
-grouped_df['gateway_charge_inr'] = grouped_df['gateway_charge_in_usd'] * conversion_rate
-grouped_df['processing_fee_inr'] = grouped_df['processing_fee_in_usd'] * conversion_rate
-grouped_df['tax_inr'] = grouped_df['tax_in_usd'] * conversion_rate  
+for column in ['total_amount', 'adspend_amount', 'convenience_fee', 'gateway_charge', 'processing_fee', 'tax']:
+    grouped_df[f'{column}_inr'] = grouped_df[f'{column}_in_usd'] * conversion_rate
 
-grouped_df_inr = df.groupby(['grouped_date']).agg({'total_amount_inr': 'sum', 'adspend_amount_inr': 'sum', 'convenience_fee_inr': 'sum', 'gateway_charge_inr': 'sum', 'processing_fee_inr': 'sum', 'tax_inr': 'sum'}).reset_index()
+grouped_df_inr = grouped_df.groupby(['grouped_date']).agg({'total_amount_inr': 'sum', 'adspend_amount_inr': 'sum', 'convenience_fee_inr': 'sum', 'gateway_charge_inr': 'sum', 'processing_fee_inr': 'sum', 'tax_inr': 'sum'}).reset_index()
 
 grouped_df_inr.set_index('grouped_date', inplace=True)
 grouped_df_inr = grouped_df_inr.T
+# Sort the columns by date
+if grouping == 'Year':
+    grouped_df_inr = grouped_df_inr[sorted(grouped_df_inr.columns, key=lambda x: pd.to_datetime(x, format='%Y'), reverse=True)]
+elif grouping == 'Month':
+    grouped_df_inr = grouped_df_inr[sorted(grouped_df_inr.columns, key=lambda x: pd.to_datetime(x, format='%b-%y'), reverse=True)]
+elif grouping == 'Week':
+    grouped_df_inr = grouped_df_inr[sorted(grouped_df_inr.columns, key=lambda x: (int(x.split(' - week ')[0]), int(x.split(' - week ')[1])), reverse=True)]
+else:  # Date
+    grouped_df_inr = grouped_df_inr[sorted(grouped_df_inr.columns, key=lambda x: pd.to_datetime(x), reverse=True)]
 
+st.dataframe(grouped_df_inr.sort_index(), use_container_width=True)
 
-st.dataframe(grouped_df_inr,use_container_width=True)
+st.write("Full Data:")
+st.dataframe(df,use_container_width=True)
